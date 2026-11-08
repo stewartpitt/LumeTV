@@ -77,6 +77,14 @@ fun SettingsTab(vm: AppViewModel) {
             color = Muted,
         )
         Button(onClick = { vm.refreshAll() }) { Text("Refresh channels and films") }
+        Button(onClick = { vm.setMatchFrameRate(!vm.matchFrameRate) }) {
+            Text("Match TV frame rate: " + if (vm.matchFrameRate) "On" else "Off")
+        }
+        Text(
+            "Switches your TV to 50Hz for UK channels (or 24/60Hz to suit the video) for smoother motion. " +
+                "The screen may go black for a second when a channel starts.",
+            color = Muted, fontSize = 13.sp,
+        )
         Button(onClick = { vm.logout() }) { Text("Change playlist / sign out") }
         Text(
             "Tip: hold OK on any channel, film or series to add it to My List.",

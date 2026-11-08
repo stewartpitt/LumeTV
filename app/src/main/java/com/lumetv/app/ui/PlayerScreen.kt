@@ -1,6 +1,10 @@
 package com.lumetv.app.ui
 
+import android.app.Activity
 import android.content.Context
+import android.media.MediaFormat
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.ViewGroup
 import androidx.annotation.OptIn
@@ -30,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -38,6 +43,7 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.video.VideoFrameMetadataListener
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import androidx.media3.ui.PlayerView
@@ -64,6 +70,48 @@ private fun buildPlayer(context: Context): ExoPlayer {
         .build()
 }
 
+/**
+ * Works out the video's frame rate from the timestamps of the first frames (live TS streams
+ * rarely state it), then reports it once on the main thread.
+ */
+@OptIn(UnstableApi::class)
+private class FpsProbe(private val onFps: (Float) -> Unit) : VideoFrameMetadataListener {
+    private val main = Handler(Looper.getMainLooper())
+    private val times = ArrayList<Long>()
+    @Volatile private var done = false
+
+    @Synchronized
+    fun reset() {
+        times.clear()
+        done = false
+    }
+
+    @Synchronized
+    override fun onVideoFrameAboutToBeRendered(
+        presentationTimeUs: Long, releaseTimeNs: Long, format: Format, mediaFormat: MediaFormat?,
+    ) {
+        if (done) return
+        if (format.frameRate > 0f) {
+            report(format.frameRate); return
+        }
+        if (times.isNotEmpty() && presentationTimeUs <= times.last()) times.clear()  // stream jumped
+        times.add(presentationTimeUs)
+        if (times.size < 40) return
+        val deltas = times.zipWithNext { a, b -> b - a }.filter { it > 0 }.sorted()
+        if (deltas.isEmpty()) { times.clear(); return }
+        report(1_000_000f / deltas[deltas.size / 2])
+    }
+
+    private fun report(raw: Float) {
+        done = true
+        // Snap to the nearest broadcast rate when close.
+        val standard = listOf(23.976f, 24f, 25f, 29.97f, 30f, 50f, 59.94f, 60f)
+        val fps = standard.minByOrNull { kotlin.math.abs(it - raw) }
+            ?.takeIf { kotlin.math.abs(it - raw) / it < 0.03f } ?: raw
+        main.post { onFps(fps) }
+    }
+}
+
 private fun mediaFor(url: String): ExoItem {
     val b = ExoItem.Builder().setUri(url)
     if (url.substringBefore('?').endsWith(".m3u8", ignoreCase = true)) b.setMimeType(MimeTypes.APPLICATION_M3U8)
@@ -87,7 +135,11 @@ fun PlayerScreen(vm: AppViewModel, request: PlayRequest) {
     var bannerVisible by remember { mutableStateOf(true) }
     var playerView by remember { mutableStateOf<PlayerView?>(null) }
 
+    val matcher = remember { (context as? Activity)?.let { FrameRateMatcher(it) } }
+    val probe = remember { FpsProbe { fps -> if (vm.matchFrameRate) matcher?.match(fps) } }
+
     fun start(url: String, positionMs: Long) {
+        probe.reset()
         currentUrl = url
         player.setMediaItem(mediaFor(url), positionMs.coerceAtLeast(0))
         player.prepare()
@@ -127,10 +179,13 @@ fun PlayerScreen(vm: AppViewModel, request: PlayRequest) {
             }
         }
         player.addListener(listener)
+        player.setVideoFrameMetadataListener(probe)
         onDispose {
             shown?.let { vm.saveProgress(it, player.currentPosition, player.duration) }
             player.removeListener(listener)
+            player.clearVideoFrameMetadataListener(probe)
             player.release()
+            matcher?.restore()
         }
     }
 

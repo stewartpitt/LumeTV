@@ -24,6 +24,11 @@ class Store(context: Context) {
             }.apply()
         }
 
+    /** Switch the TV's refresh rate to suit the video (e.g. 50Hz for UK channels). */
+    var matchFrameRate: Boolean
+        get() = prefs.getBoolean("matchFrameRate", true)
+        set(value) { prefs.edit().putBoolean("matchFrameRate", value).apply() }
+
     private fun scoped(key: String): String {
         val a = account ?: return key
         return "$key:${(a.server + a.username + a.m3uUrl).hashCode()}"

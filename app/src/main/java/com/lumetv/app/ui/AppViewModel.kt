@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -12,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import com.lumetv.app.data.Account
 import com.lumetv.app.data.Category
 import com.lumetv.app.data.ContentType
+import com.lumetv.app.data.EpgEntry
 import com.lumetv.app.data.Episode
 import com.lumetv.app.data.MediaItem
 import com.lumetv.app.data.PlayRequest
@@ -19,6 +21,8 @@ import com.lumetv.app.data.ProgressEntry
 import com.lumetv.app.data.Provider
 import com.lumetv.app.data.Store
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 sealed interface Screen {
     data object Login : Screen
@@ -73,6 +77,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var progress by mutableStateOf(store.progress())
         private set
 
+    // ---- TV guide (now & next) cache for the channel list ----
+    val epg = mutableStateMapOf<String, List<EpgEntry>>()
+    private val epgFetchedAt = HashMap<String, Long>()
+    private val epgLimit = Semaphore(4)
+
+    var matchFrameRate by mutableStateOf(store.matchFrameRate)
+        private set
+
+    fun setMatchFrameRate(on: Boolean) {
+        store.matchFrameRate = on
+        matchFrameRate = on
+    }
+
     // ---- focus restore when coming back to a screen ----
     var lastFocus: String? = null
     var restoreKey by mutableStateOf<String?>(null)
@@ -123,6 +140,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             store.account = account
             provider = p
             listOf(live, movies, series).forEach { it.reset() }
+            epg.clear(); epgFetchedAt.clear()
             refreshPersonal()
             stack.clear(); focusStack.clear()
             stack.add(Screen.Home)
@@ -135,6 +153,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         store.account = null
+        epg.clear(); epgFetchedAt.clear()
         provider = null
         listOf(live, movies, series).forEach { it.reset() }
         stack.clear(); focusStack.clear()
@@ -221,6 +240,21 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun retry(catalog: Catalog) {
         catalog.reset()
         ensureLoaded(catalog)
+    }
+
+    /** Fetch now & next for a channel, at most every 10 minutes and only once the current show has ended. */
+    fun loadEpg(item: MediaItem) {
+        val p = provider ?: return
+        val now = System.currentTimeMillis()
+        val last = epgFetchedAt[item.key]
+        val cached = epg[item.key]
+        val stillCurrent = cached?.any { it.end > now } == true
+        if (last != null && (stillCurrent || now - last < 10 * 60_000)) return
+        epgFetchedAt[item.key] = now
+        viewModelScope.launch {
+            val list = epgLimit.withPermit { runCatching { p.shortEpg(item) }.getOrDefault(emptyList()) }
+            epg[item.key] = list
+        }
     }
 
     // ---------------- playback ----------------
