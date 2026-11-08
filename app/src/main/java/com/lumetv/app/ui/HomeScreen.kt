@@ -77,7 +77,7 @@ fun SettingsTab(vm: AppViewModel) {
             color = Muted,
         )
         Button(onClick = { vm.refreshAll() }) { Text("Refresh channels and films") }
-        Button(onClick = { vm.setMatchFrameRate(!vm.matchFrameRate) }) {
+        Button(onClick = { vm.toggleMatchFrameRate(!vm.matchFrameRate) }) {
             Text("Match TV frame rate: " + if (vm.matchFrameRate) "On" else "Off")
         }
         Text(

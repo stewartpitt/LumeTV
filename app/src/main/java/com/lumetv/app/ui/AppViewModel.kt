@@ -85,7 +85,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var matchFrameRate by mutableStateOf(store.matchFrameRate)
         private set
 
-    fun setMatchFrameRate(on: Boolean) {
+    fun toggleMatchFrameRate(on: Boolean) {
         store.matchFrameRate = on
         matchFrameRate = on
     }
