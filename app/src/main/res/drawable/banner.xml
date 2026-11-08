@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 320x180 launcher banner for Android TV / Fire TV -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#1C242A" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#00AAFF" android:pathData="M40,55L100,90L40,125Z" />
+    <!-- simple bars suggesting "TV" -->
+    <path android:fillColor="#FFFFFF" android:pathData="M125,70h150v10h-150z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M125,88h110v8h-110z" />
+    <path android:fillColor="#FF8D00" android:pathData="M125,104h70v6h-70z" />
+</vector>
